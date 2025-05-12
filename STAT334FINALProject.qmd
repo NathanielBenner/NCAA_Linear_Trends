@@ -1,0 +1,341 @@
+---
+title: "Analyzing Trends in College Basketball Using Linear Regression"
+subtitle: STAT 334
+author: "Nathaniel Benner, Warren Woo, Brandon Solari"
+date: "`r Sys.Date()`"
+format:
+  html:
+    theme: journal
+    toc: true
+    code-tools: true
+    code-fold: true
+    self-contained: true
+    self-contained-math: true
+    number-sections: true
+execute: 
+  echo: true
+  eval: true
+  message: false
+  warning: false
+editor_options: 
+  chunk_output_type: console
+---
+
+<!-- This is how you leave yourself private comments in Quarto -->
+
+
+<!-- Load Packages -->
+<!-- "include = FALSE" suppresses the output of the chunk from being displayed in the final document -->
+```{r packages, include=FALSE}
+library(scatterplot3d)
+library(readxl)
+library(readr)
+library(car)
+library(MASS)
+library(lmtest)
+library(kableExtra)
+library(GGally)
+library(leaps)
+library(dplyr)
+```
+
+<!-- Import Data, include =  -->
+<!-- "include = FALSE" suppresses the output of the chunk from being displayed in the final document -->
+```{r import, include=FALSE}
+test_cbb=read.csv("cbb.csv")
+BasketballData=read.csv("cbb.csv")
+test_cbb$POWER <- as.factor(ifelse(test_cbb$CONF %in% c("SEC", "ACC", "P12", "B10", "B12"), "PowerConf", "NonPowerConf"))
+```
+
+<!-- Title Image -->
+![2025 Men's College Basketball Final Four Logo, NCAA.com](2025_NCAA_Men's_Final_Four_logo.png){#fig-elephant width=4in fig-align="left"}
+
+
+
+# Abstract
+
+This report presents a statistical analysis of college basketball teams and the factors influencing their win totals over a season. The dataset, sourced from Kaggle, includes Division I college basketball data from the 2013 to 2023 seasons, excluding the 2020 season. The primary explanatory variables examined are adjusted team offensive efficiency (ADJOE), adjusted team defensive efficiency (ADJDE), and effective field goal percentage (EFG_O). We also created a new categorical variable named POWER that determines if a team is in a power conference (SEC, ACC, PAC12, BIG10, or BIG12) or not. We investigate whether these predictors have a significant impact on the response variable, team win total. To analyze the direction and strength of these relationships, we applied linear regression modeling, ensuring that model assumptions are met. Our findings indicate that each of these predictors have a significant impact on the number of wins a team accumulates in a season. We see that ADJOE and EFG_O are significantly positively correlated with win total, while ADJDE and POWER are significantly negatively correlated with win total.
+
+# Introduction 
+
+College basketball is one of the most popular and highly analyzed sports in the United States, with teams, analysts, and fans constantly seeking to understand what factors contribute to winning seasons. Our group is among those seeking to find important metrics that influence a team's win total. This study aims to explore the relationship between team performance metrics and team win totals across multiple seasons of NCAA Division I college basketball, building on a study involving rebounding in college basketball by Nathaniel Benner in the Winter of 2024. Specifically, we examine how Adjusted Offensive Efficiency, Adjusted Defensive Efficiency, Effective Field Goal Percentage, and what type of conference (Power, Non Power) a team is in influences the total number of wins a team accumulates in a season. Understanding these relationships can provide valuable insights for coaches, analysts, and even bettors looking for patterns in team success. Our goal is to determine which of these factors has the strongest association with win totals and whether teams with certain statistical profiles consistently outperform others. Maybe we can even determine who has the best chance to win March Madness this year.
+
+
+
+# Materials and Methods
+
+The data for this analysis was source from Kaggle, a widely used platform for publicly available datasets. The dataset includes Division I college basketball team statistics from the 2013 to 2023 seasons, excluding the 2020 season, which was likely omitted due to the COVID-19 pandemic’s impact on the college basketball schedule. The observational units in this study are individual Division I college basketball teams from each season. Each row in the dataset represents a single team’s performance for a given season. This study focuses on the relationship between team performance metrics and team win totals across a season. The key variables analyzed include: 
+
+Team Win Total (measured as the number of wins a team recorded in a given season). This variable is a count and takes non-negative integer values. 
+
+Adjusted Offensive Efficiency (ADJOE) – This measures a team’s points scored per 100 possessions, adjusted for opponent strength. 
+
+Adjusted Defensive Efficiency (ADJDE) – This measures a team’s points allowed per 100 possessions, adjusted for opponent strength.
+
+Effective Field Goal Percentage (EFG_O) – This metric adjusts for the fact that three-point shots are worth more than
+two-point shots, providing a more accurate measure of shooting efficiency. It is calculated as [(FGM + 0.5 x 3PM)/FGA] x 100%.
+
+The last variable of concern is POWER, which splits teams into 2 categories: teams that are members of a Power 5 conference in college basketball (Big10, Big12, Pac12, ACC, SEC), and teams that are not members of one of those power 5 conferences.
+
+This study is observational in nature. Since the dataset consists of historical team performance metrics, there was no random sampling or random assignment involved. Instead, we are analyzing existing data to identify statistical relationships. The dataset was obtained from Kaggle, which compiles team statistics from sources such as KenPom.com, the NCAA’s official statistics database, and other publicly available basketball analytics sources. The dataset was likely created by scraping or aggregating publicly available game and team performance data.
+
+
+# Split the Data 
+
+To ensure proper model validation, the dataset was randomly split into training (80%) and test (20%) datasets. A set.seed(129) function was used to ensure reproducibility, meaning the same test data is selected each time the code runs. The total number of observations in the dataset was 3523, with 704 observations allocated to the test set and 2818 to the training set. This data split is very important because the training data is used to develop the model, while the actual test data remains untouched until final validation. This approach prevents overfitting and ensures that the model's performance is evaluated on unseen data.
+<!-- Split the Data  -->
+<!-- "include = FALSE" suppresses the output of the chunk from being displayed in the final document -->
+```{r}
+set.seed(129) 
+
+n <- nrow(test_cbb)  
+test_indices <- sample(1:n, size = 0.2 * n)  
+
+test_cbb <- test_cbb[test_indices, ] 
+train_cbb <- test_cbb[-test_indices, ]  
+```
+
+# Data Visualization
+
+Having successfully split the data for analysis, we can now move on to analyzing our data using plots. Looking at our matrix scatterplot below, we can verify that the three most usable explanatory variables for our model to estimate a team's number of wins is Adjusted Offensive Efficiency, Adjusted Defensive Efficiency, and Effective Field Goal Percentage on Offense. To show the difference between our useful and non useful variables, we included Offensive Rebounds Per Game in this model, and with a Correlation Coefficient of only .31, it is clearly not a useful explanatory variable for our model. 
+
+<!-- Matrix Scatterplot -->
+<!-- Anytime you refer to the figure use "@fig-matrix-scatter" -->
+```{r , fig.width=6.5, fig.height=6.5}
+
+#| label: fig-matrix-scatter
+#| fig-cap: "Matrix Scatterplot of College Basketball Data"
+
+#matrix scatter
+ggpairs(test_cbb, columns = c(8, 6, 5, 4, 12))
+```
+
+Moving on to a scatterplot depicting this relationship, below is a 3-dimensional plot displaying a Linear Regression model of Team Wins explained by Adjusted Offensive and Defensive Team Efficiency. Clearly shown by the points in our plot and the model plane created by the equation of best fit, as a team's Adjusted Offensive Efficiency and Adjusted Defensive Efficiency increases, a team's expected amount of wins also increases. 
+
+```{r}
+
+s3d<-scatterplot3d(test_cbb$ADJOE, test_cbb$ADJDE, test_cbb$W, xlim= c(100,130), ylim = c(80,100), angle = 70, color = "lightblue", xlab = "Adjusted Team Offensive Efficiency", ylab = "Adjusted Team Defensive Efficiency", zlab = "Wins", main = "Linear Regression of Wins with Adjusted 
+Team Offensive and Defensive Efficiency")
+my.lm <- lm(test_cbb$W ~ test_cbb$ADJOE + test_cbb$ADJDE)
+s3d$plane3d(my.lm)
+```
+
+
+
+<!-- Correlation Matrix -->
+<!-- Anytime you refer to the table use "@tbl-cor-matrix" -->
+```{r, fig.width=6.5, fig.height=6.5}
+#| label: tbl-cor-matrix
+#| tbl-cap: "Correlation Matrix of College Basketball Data"
+
+# Calculate the correlation matrix for quantitative variables and round to 3 decimal places
+cor_matrix <- round(cor(test_cbb[,c(4,5, 6)]), 3)
+
+# Create a beautiful table for the correlation matrix
+kable(cor_matrix, format = "html") %>%
+  kable_styling(full_width = FALSE, position = "left", bootstrap_options = c("striped", "hover"))
+```
+
+@tbl-cor-matrix shows the correlation coefficient of each of our explanatory variables. As we can clearly see, the relationship between a college basketball team's total number of wins for a season and their Adjusted Offensive Efficiency is very strong and positive, meaning as a team's Offensive Efficiency improves, their total number of wins also increases. The relationship between a team's Adjusted Defensive Efficiency and wins is strong and negative, however the lower a team's ADJDE is the better their defense is, so similar conclusions to ADJOE can be made: as a team's Adjusted Defensive Efficiency improves, their total number of wins also increases. 
+
+
+# Variable Pre-Processing
+
+This section discusses the essential transformations needed for our data regarding College Basketball wins. 
+
+```{r, fig.width=6.5, fig.height=6.5}
+#| label: tbl-boxcox-trans
+#| tbl-cap: "BoxCox Transformation Graph"
+model1 <- lm(W ~ ADJOE + ADJDE + EFG_O + POWER, data = test_cbb)
+boxcox(model1, lambda = seq(-1, 1))
+avPlots(model1)
+
+```
+
+
+
+Looking at the Added Variable Plot procedure above, the plots produced give us details about each variable, regressed onto the other explanatory variables in our model containing ADJOE, ADJDE, and EFG on Offense. For all three plots, a linear formation is formed from the data provided. This tells us that each of our predicting variables (ADJOE, ADJDE, EFG_O, POWER) are useful as-is at predicting number of wins in our model, after adjusting for the remaining explanatory variables in our model, as the form of their added variable plots are linear. 
+
+When considering possible transformations, the Box-Cox procedure above gives us a confidence interval between about $\lambda$ = 0.6 to $\lambda$ = 0.8. Although that this tells us a transformation will be recommended, since we have usual looking residual diagnostic plots and for easier graphical interpretation, we will ignore the Box-Cox procedure for our data. 
+
+Using the analysis above, along with the residual diagnostic plots shown here and in the next section, it would be the wisest for us to leave our variables as they are without transformation. Since our data satisfies correct form, independence, normality, and equal variance (F.I.N.E.), we can confidently say no polynomial terms will be needed in our model. 
+
+The model our group has come up with uses 4 predictors:
+
+ADJOE - Adjusted Offensive Efficiency (Quantitative)
+
+ADJDE - Adjusted Defensive Efficiency (Quantitative)
+
+EFG_O - Effective Field Goal Percentage on Offense (Quantitative)
+
+POWER - Whether or not a team is in a Power Conference (Categorical)
+
+# Residual Analysis
+
+With the data now pre-processed and transformed, we can proceed to examine the residual diagnostics regarding our model predicting wins in college basketball:
+
+```{r}
+par(mfrow=c(2,2))  
+plot(model1, labels.id = test_cbb$TEAM)
+```
+
+Looking at our Residual Diagnostic plots, we can see visually that all assumptions look good. Normality for Wins for college basketball looks satisfied, and so does our Form and our Equal Variance. In order to be absolutely sure, we will run some formal tests to check if the conditions are met.
+
+```{r}
+#| label: formal-tests-mod
+#| tbl-cap: "Formal testing for our Model"
+shapiro.test(resid(model1))
+bptest(model1)
+```
+
+Looking at our formal tests (Shapiro-Wilk, Breusch-Pagan), we can confirm that our Normality assumption is met (Shapiro-Wilk: Test stat: 0.997, p = 0.36) but we could run into some problems with our Equal Variance assumption (Breusch-Pagan: Test stat = 18.02, p = 0.001). Let's investigate the BP test further:
+
+```{r}
+#| label: tbl-trans
+#| tbl-cap: "Simulated Transformation Process"
+model3 <- lm(W^0.7 ~ ADJOE + ADJDE + EFG_O + POWER, data = test_cbb)
+shapiro.test(resid(model3))
+bptest(model3)
+```
+
+From @tbl-boxcox-trans, the transformation recommended is $\lambda$ = 0.7. We know from from our original formal tests that only the Equal Variance assumption is met, so we need to transform our Wins variable. The chunk above simulates this new model, with the model being:
+
+$\hat{Wins^.8} = \beta_{ADJOE}(ADJOE)+\beta_{ADJDE}(ADJDE)+\beta_{EFG_O}(EFG_O)+\beta_{POWER}(POWER)$
+
+After simulating the new model in @tbl-trans, our BP p-value improves, but at the cost of our Normality assumption! With this knowledge, we will continue with the model not modifying Wins. This will be easier to interpret, and we can keep our Normality assumption satisfied. 
+
+Next, we will investigate which points are the most influential in our model, investigating the Residuals vs. Leverage plot from our diagnostics conducted earlier, and with our Case Influence Diagnostic procedure conducted below:
+
+```{r}
+infIndexPlot(model1, vars=c("Cook", "Studentized"))
+infIndexPlot(model1, vars=c("Bonf", "hat"))
+influencePlot(model1)
+```
+
+What our diagnostics tells us about our influential points is that there are 3 teams that are significantly influential to our model. The teams that the observation numbers relate to are the 2021 Nebraska Cornhuskers, the 2021 Purdue Fort Wayne Mastodons, and the 2021 Memphis Tigers. Looking at the Cook's Distance influence plot, the teams we determined would be the most influential are the darkest blue, and so we will continue with our discussion while keeping an eye on the most influential teams in our dataset. 
+
+
+
+# Fit a Linear Model 
+
+Having conducted thorough residual diagnostics, we are now equipped to fit a linear model. We will also look at a new predictor in the linear model, POWER. This variable will be 'PowerConf' if a college team is in a power conference (SEC, ACC, PAC12, BIG10, or BIG12) and 'NonPowerConf' if a college team is not in a power conference.
+
+```{r}
+#| label: tbl-mod1-summary
+#| tbl-cap: "Model Summary for Model 1"
+#| 
+summary(model1)
+vif(model1)
+```
+
+From @tbl-mod1-summary we see that the model equation is: $\hat{Wins} = 5.545 + 0.437(ADJOE) - 0.495(ADJDE) + 0.341(EFG_O) - 3.797(POWER)$
+This model makes sense contextually because a higher Adjusted Offensive Efficiency and a higher Effective Field Goal Percentage are metrics that the team is performing well and contributes to an increase in predicted wins. A lower Adjusted Defensive Efficiency is better than a higher Adjusted Defensive Efficiency, so it makes sense that the sign for this predictor is negative. It also makes sense that the sign for POWER is negative because if a team is in a power conference, their opponents likely have better metrics, so the number of predicted wins decreases as it is harder to beat these teams.
+
+Overall, the behavior of the model is good as the coefficients make sense and accurately reflect the underlying relationship in the data. The model has a good fit with low bias, a fairly high $R^2$ value, and assumptions are met.
+
+$R^2$ = 0.7179 - 71.79% of the variation in Wins is explained by the predictors ADJOE, ADJDE, EFG_O, and POWER.
+
+s = 3.53 - The typical observed win total for a team is 3.53 wins away from the predicted number of wins.
+
+The predicted number of wins for a team with a ADJOE of 0, a ADJDE of 0, a EFG_O of 0, and not in a power conference is 5.545 wins. 
+For each one point increase in ADJOE, the number of wins is predicted to increase by 0.437, holding all other predictors constant.
+For each one point increase in ADJDE, the number of wins is predicted to decrease by 0.495, holding all other predictors constant.
+For each one percent increase in EFG_O, the number of wins is predicted to increase by 0.341, holding all other predictors constant.
+When a team is in a power conference, the number of wins is predicted to decrease by 3.797, holding all other predictors constant.
+The VIFs for the predictors are all less than 5, so multicollinearity is not an issue in this model.
+
+<!-- Model 1 Summary -->
+<!-- Anytime you refer to the summary table use "@tbl-mod1-summary" -->
+
+# Statistical Inference 
+
+With the model fitted and evaluated, we can now shift our focus to inference, where we will compare our model to a model only containing one explanatory variable:
+
+```{r}
+#Compare full model to a model with only one explanatory variable using a Partial F-test
+test_cbb$POWER <- as.factor(ifelse(test_cbb$CONF %in% c("SEC", "ACC", "P12", "B10", "B12"), "PowerConf", "NonPowerConf"))
+reduced_model <- lm(W ~ ADJOE, data = test_cbb)
+anova(reduced_model, model1)
+
+futurepred <- data.frame(ADJOE = 103, ADJDE = 103, EFG_O = 50, POWER = "PowerConf")
+predict(model1, newdata = futurepred, interval = "confidence")
+predict(model1, newdata = futurepred, interval = "prediction")
+```
+
+The regression model predicting NCAA basketball team win totals based on Adjusted Offensive Efficiency (ADJOE), Adjusted Defensive Efficiency (ADJDE), Effective Field Goal Percentage (EFG_O), and POWER is statistically significant. The null hypothesis is: $\beta_{ADJOE} = \beta_{ADJDE} = \beta_{EFG_O} = \beta_{POWER} = 0$. The alternative hypothesis is: At least one $\beta_i$ ≠ 0, where i = ADJOE, ADJDE, EFG_O, POWER. The overall F-statistic for the model is 444.7 with a p-value of <.001, which is well below the conventional significance threshold of 0.05. This allows us to reject the null hypothesis, concluding that at least one of the predictors has a statistically significant relationship with win totals. The R² value of 0.7179 indicates that approximately 71.79% of the variance in win totals is explained by the model, demonstrating a strong fit. The residual standard error of 3.53 suggests that the model's predictions are, on average, within about 3.5 wins of the actual win totals. This implies that the model is reliable in explaining variations in win totals based on the chosen predictors. 
+
+The model’s prediction for a Power 5 conference team with an ADJOE of 103, an ADJDE of 103, and an EFG Percentage of 50% is approximately 16.04 wins. We chose these specific values as they were the mean of each respective variable (rounded).The 95% confidence interval for the predicted win total ranges from 12.11 to 13.66 wins. This means that we are 95% confident that the true mean win total for teams with similar characteristics will fall within this range. The narrow width of the confidence interval reflects the model’s precision when estimating the average performance of teams with comparable statistical profiles. Using the same values, we predicted win total for such a team was 12.88 wins, with a 95% prediction interval ranging from 5.91 to 19.86. This means that we are 95% confident that a single team with these characteristics would win between 5.91 and 19.86 games. The wider prediction interval reflects the added uncertainty when predicting individual team performance rather than the mean win total. The selected predictors are theoretically justified based on their established importance in basketball performance analysis. ADJOE and ADJDE directly reflect how effectively a team scores and defends per 100 possessions, adjusted for the strength of the opponent. EFG Percentage captures shooting efficiency by accounting for the added value of three-point shots, making it a more accurate measure than traditional field goal percentage. These variables provide a comprehensive view of team performance, reinforcing the model's relevance and predictive strength. 
+
+The Partial F-test comparing the full model to the reduced model yields an F-statistic of 133.87 with a p-value of <0.001, indicating that the additional variables (ADJDE, EFG_O, and POWER) significantly improve the model's explanatory power. This demonstrates that the added predictors provide meaningful information in explaining variation in win totals beyond what ADJOE alone accounts for.
+
+# Model validation
+```{r}
+model = lm(model1, data=train_cbb)
+predicted <- predict(model1, newdata = test_cbb)
+
+actual= test_cbb$W
+MSPE=mean((predicted-actual)^2)
+mse_train <- mean(model$residuals^2)
+MSPE
+mse_train
+```
+The Mean Squared Prediction Error value we found is 12.39. Our Mean Squared Error value from our training data was only 12.09, so due to how close these two values are, we deem that the predictive ability of wins of our model is acceptable.
+
+Now that our model is validated for our test data (20% of our actual data), we will now run the model through the entire dataset to get a better idea of what our model would have looked like had we chosen to use our entire dataset: 
+
+```{r}
+BasketballData$POWER <-as.factor(ifelse(BasketballData$CONF %in% c("SEC", "ACC", "P12", "B10", "B12"), "PowerConf", "NonPowerConf"))
+modelfull <- lm(W ~ ADJOE + ADJDE + EFG_O + POWER, data = BasketballData)
+summary(modelfull)
+```
+
+With the model now spanning over all observations in our dataset, our new model equation becomes:
+
+$\hat{Wins} = 5.57 + 0.41(ADJOE) - 0.499(ADJDE) + 0.402(EFG_O) - 3.63(POWER)$
+
+This model is very similar to our original, as most of the number have only shifted a few tenths in certain directions, while keeping their sign. This tells us that our original model is useful when drawing conclusions about the entire dataset. 
+
+# Conclusion
+
+Based on our analysis of Wins in College Basketball, we have identified key factors that significantly impact the amount of wins a team has in a season. By incorporating these variables into a regression model, we obtain the following equation describing the relationship between Wins and its predictors (ADJOE, ADJDE, EFG_O, POWER):
+
+$\hat{Wins} = 5.545 + 0.437(ADJOE) - 0.495(ADJDE) + 0.341(EFG_O) - 3.797(POWER)$
+
+This model is validated with our earlier processes, and satisfies all assumptions needed for us to draw real conclusions from (F.I.N.E. assumptions are met). Using this model to predict a team's Win total, we find that these predictors are statistically significant together at predicting win total (F = 444.7, p < 0.001). This tells us that ADJOE and EFG_O are significantly positively correlated with Win total, while ADJDE and POWER are significantly negatively correlated with Win total. 
+
+The only weakness of our model is our transformations to improve our formal tests, as our Breusch-Pagan and Shapiro-Wilk tests could not be significantly satisfied at the same time. From a visual inspection of the residuals versus fitted, we decided to ignore the BP  test results as the variance across the x-axis looked good enough to use. 
+
+For further investigation, I would investigate which field goal type has a bigger effect on win total, as it is relevant to the alarming increase in 3 point shot volume over the recent years and can be investigated on both defense and offense for both teams using this dataset (X2P_O, X2P_D, X3P_O, X3P_D). 
+
+If we were to conduct the study another time, I would hope for some more interesting precise variables to use, as new advanced statistics for basketball are being created to try to help analyze how a team plays a game of college basketball. Some of these new variables include Pace of Play, Strength of Schedule, and Wins Above Replacements to measure the strength of a basketball team's starting five. 
+
+# Appendix
+
+https://www.kaggle.com/datasets/andrewsundberg/college-basketball-dataset
+
+-Win Total (W)
+
+-Adjusted offensive efficiency (ADJOE) Points per 100 possessions
+
+-Adjusted defensive efficiency (ADJDE) Points per 100 possessions
+
+-Effective field goal percentage (EFG_O) Percentage %
+
+-Power Conference (POWER)
+
+## Data Set
+
+The dataset has been submitted separately on Canvas alongside the project submission.
+
+## List of Extras
+
+- Title Page Image
+- Reference to Previous Study
+- Abstract
+- Enhanched labeling/visualization of correlation matrix
+- 3D Scatterplot in Data Viz
+- Combined matrix scatterplot and correlation matrix
+- Box-Cox Procedure
+- Added Variable Plots
+- Case Influence Diagnostics (Influence & Leverage)
+- Model validation: Comparing Model to Full Dataset Model
